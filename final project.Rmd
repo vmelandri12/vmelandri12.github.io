@@ -1,0 +1,251 @@
+---
+title: "Diversity on College Campuses"
+output: html_document
+---
+# CMSC 320 Spring 2018 : Final Project
+# Virginia Melandri
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Introduction
+This project is a tutorial through the entire data science pipeline: data curation, parsing, and management; exploratory data analysis; hypothesis testing and machine learning to provide analysis; and the curation of a message or messages covering insights learned. We will explore datasets retrieved from US News containing different types of college statistics to see if there is a relationship between them. These characteristics are tuition, acceptance rate, enrollment, diversity, and presence of greek life. I believe diversity in schools is very important, so I would like to see if any of these factors contribute to it.
+
+# Content
+This tutorial will cover the following areas:
+1. Data Curation and Parsing
+2. Data Management
+3. Exploratory Data Analysis
+4. Hypothesis Testing and Machine Learning
+5. Conclusion
+6. Further Investigation and Additional Resources
+
+# Data Curation and Parsing
+First, let's scrape the data from US News' Best Colleges html table found in the site https://www.usnews.com/best-colleges/search?_mode=table&_sort=acceptance-rate&_sort-direction=asc, which lists the tuition, enrollment and acceptance rate of each college in the US. We must load the libraries that we will be using with library(). Then, we retrieve the table using html functions. Set the colunm names to their corresponding names with set_colnames().
+
+In this table, the entities (rows) are each individual college, and the attributes (columns) are "Name/Rank", "Tuition and Fees", "Enrollment", "Acceptance Rate", and "Compare". These are text, discrete numeric, discrete numeric, and discrete numeric respectively, while Compare is not a data type; it is merely an interactive tool on the website.
+```{r}
+library(rvest)
+library(magrittr)
+library(tibble)
+url <- "https://www.usnews.com/best-colleges/search?_mode=table&_sort=acceptance-rate&_sort-direction=asc"
+colleges <- url %>%
+  read_html() %>%
+  html_node("table") %>%
+  html_table(fill=TRUE) %>%
+  set_colnames(c("Name_Rank", "Tuition_and_Fees", "Enrollment", "Acceptance_Rate", "Compare")) %>%
+  as_data_frame
+colleges
+```
+
+As you may have noticed, the table retrieved from the site's URL only includes 23 rows. This is because more rows load on the website as one scrolls down. However, the URL does not seem to change when scrolling. When hovering the cursor over the "Load More" option, I found that the URL that appears on the bottom left corner of the browser includes "&_page=<page number>" at the end. Through a quick trial and error of editing the URL with different page numbers, I found that the last page is 90.
+
+In order to combine the tables from all these pages, iterate through all of them with a for-loop, and combine them with function rbind().
+
+At the end, we use the slice() function in order to only print out a partial output for demonstration, and not all 90 pages.
+```{r}
+library(dplyr)
+for(i in 2:90){
+  page_url <- paste(url, i, sep="&_page=")
+
+colleges_page <- page_url %>%
+  read_html() %>%
+  html_node("table") %>%
+  html_table(fill=TRUE) %>%
+  set_colnames(c("Name_Rank", "Tuition_and_Fees", "Enrollment", "Acceptance_Rate", "Compare")) %>%
+  as_data_frame
+
+colleges <- rbind(colleges, colleges_page)
+}
+colleges %>% slice(1:20)
+```
+
+Next, tidy the data.
+1. Remove column 5, Compare, as it is not needed, using select().
+2. Clean up the Tuition_and_Fees, Enrollment and Acceptance_Rate columns by removing all dollar signs, commas and percentage signs using mutate() and str_replace_all() with regex. Then, change them to numeric types using type_convert().
+3. Next, standardize the acceptance rate by converting it to a percentage. Clean up the Name_Rank column by removing everything beginning at the first new line character, and rename to "Name".
+```{r warning=F}
+library(readr)
+library(stringr)
+colleges <- colleges %>%
+  select(1:4) %>%
+  mutate(Tuition_and_Fees = str_replace_all(Tuition_and_Fees, ",", "")) %>%
+  mutate(Tuition_and_Fees = str_replace_all(Tuition_and_Fees, "\\$", "")) %>%
+  mutate(Enrollment = str_replace_all(Enrollment, ",", "")) %>%
+  mutate(Acceptance_Rate = str_replace_all(Acceptance_Rate, "%", "")) %>%
+  type_convert(cols("Tuition_and_Fees"= col_integer(), "Enrollment"= col_integer(), "Acceptance_Rate" = col_integer())) %>%
+  mutate(Acceptance_Rate = Acceptance_Rate/100) %>%
+  mutate(Name_Rank = str_replace_all(Name_Rank, "\n[ ]*.*", "")) %>%
+  rename(Name = Name_Rank)
+
+colleges %>% slice(1:20)
+```
+
+Now, repeat the above steps for the dataset with college names and the percentage of greek life from https://www.usnews.com/best-colleges/rankings/most-frats.
+```{r}
+url <- "https://www.usnews.com/best-colleges/rankings/most-frats"
+greek <- url %>%
+  read_html() %>%
+  html_node("table") %>%
+  html_table(fill=TRUE) %>%
+  set_colnames(c("School", "Greek_Life")) %>%
+  as_data_frame
+
+for(i in 2:10){
+  page_url <- paste(url, i, sep="?_page=")
+
+greek_page <- page_url %>%
+  read_html() %>%
+  html_node("table") %>%
+  html_table(fill=TRUE) %>%
+  set_colnames(c("School", "Greek_Life")) %>%
+  as_data_frame
+
+greek <- rbind(greek, greek_page)
+}
+
+greek <- greek %>%
+  mutate(Greek_Life = str_replace_all(Greek_Life, "%", "")) %>%
+  type_convert(cols("Greek_Life"= col_integer())) %>%
+  mutate(Greek_Life = Greek_Life/100) %>%
+  mutate(School = str_replace_all(School, "\n[ ]*.*", ""))
+
+greek %>% slice(1:20)
+```
+
+Lastly, repeat the steps for the dataset with college names and the diversity index from https://www.usnews.com/best-colleges/rankings/most-frats.
+```{r}
+url <- "https://www.usnews.com/best-colleges/rankings/national-universities/campus-ethnic-diversity"
+diversity <- url %>%
+  read_html() %>%
+  html_node("table") %>%
+  html_table(fill=TRUE) %>%
+  set_colnames(c("School", "Diversity_Index")) %>%
+  as_data_frame
+
+for(i in 2:30){
+  page_url <- paste(url, i, sep="?_page=")
+
+diversity_page <- page_url %>%
+  read_html() %>%
+  html_node("table") %>%
+  html_table(fill=TRUE) %>%
+  set_colnames(c("School", "Diversity_Index")) %>%
+  as_data_frame
+
+diversity <- rbind(diversity, diversity_page)
+}
+diversity <- diversity %>%
+    mutate(School = str_replace_all(School, "(-+).*|(\n[ ]*).*", ""))
+diversity %>% slice(1:20)
+```
+
+# Data Management
+Now that we have all our datasets, let's combine them so we can perform analyses on them. We will use inner join, which keeps rows for which both tables have values, so that there is no missing data.
+```{r}
+colleges_and_greek <- inner_join(colleges, greek, by= c("Name" = "School"))
+colleges_and_greek %>% slice(1:20)
+
+colleges_and_diversity <- inner_join(colleges, diversity, by= c("Name" = "School"))
+colleges_and_diversity %>% slice(1:20)
+
+diversity_and_greek <- inner_join(diversity, greek, by = "School")
+diversity_and_greek %>% slice(1:20)
+```
+
+# Exploratory Data Analysis
+Now, let's graph different functions using ggplot to see if there is a relationship between these college characteristics. Geom_point() maps the data as a scatter-plot, and geom_smooth() graphs a line of best fit.
+
+Plot Tuition as a function of Acceptance Rate.
+```{r}
+library(ggplot2)
+colleges %>%
+  ggplot(aes(x=Acceptance_Rate, y=Tuition_and_Fees)) +
+    geom_point() + geom_smooth() +
+    labs(title="Tuition as a Function of Acceptance Rate", x = "Acceptance Rate", y = "Tuition")
+```
+There seems to be a slight relationship between these attributes.
+
+Plot Enrollment as a function of Tuition.
+```{r}
+colleges %>%
+  ggplot(aes(x=Tuition_and_Fees, y=Enrollment)) +
+    geom_point() + geom_smooth() +
+    labs(title="Enrollment as a Function of Tuition", x = "Tuition ($)", y = "Enrollment")
+```
+The enrollment size does not seem to be correlated with tuition.
+
+Plot Greek Life as a function of Tuition.
+```{r}
+colleges_and_greek %>%
+  ggplot(aes(x=Tuition_and_Fees, y=Greek_Life)) +
+    geom_point() + geom_smooth() +
+    labs(title="Greek Life as a Function of Tuition", x = "Tuition ($)", y = "Greek Life")
+```
+There appears to be a slight relationship between greek life size and tuition.
+
+Plot Greek Life as a function of Acceptance Rate.
+```{r}
+colleges_and_greek %>%
+  ggplot(aes(x=Acceptance_Rate, y=Greek_Life)) +
+    geom_point() + geom_smooth() +
+    labs(title="Greek Life as a Function of Acceptance Rate", x = "Acceptance Rate", y = "Greek Life")
+```
+It does not seem like acceptance rate affects the size of greek life in colleges.
+
+Plot Diversity as a function of Acceptance Rate.
+```{r}
+colleges_and_diversity %>%
+  ggplot(aes(x=Acceptance_Rate, y=Diversity_Index)) +
+    geom_point() + geom_smooth() +
+    labs(title="Diversity as a Function of Acceptance Rate", x = "Acceptance Rate", y = "Diversity Index")
+```
+There appears to be a relationship between how selective a school is and how diverse its student body.
+
+Plot Diversity as a function of Tuition.
+```{r}
+colleges_and_diversity %>%
+  ggplot(aes(x=Tuition_and_Fees, y=Diversity_Index)) +
+    geom_point() + geom_smooth() +
+    labs(title="Diversity as a Function of Tuition", x = "Tuition ($)", y = "Diversity Index")
+```
+Likewise, there appears to be a relationship between the cost of attending a school and its diversity index.
+
+Plot Greek Life as a function of Diversity.
+```{r}
+diversity_and_greek %>%
+  ggplot(aes(x=Diversity_Index, y=Greek_Life)) +
+    geom_point() + geom_smooth() +
+    labs(title="Diversity as a Function of Greek Life", x = "Diversity Index", y = "Greek Life")
+```
+There seems to be a slight relationship between a school's diversity index and the size of its greek life on campus.
+
+# Hypothesis Testing and Machine Learning
+Perform a linear regression using lm() in order to determine correlation in the relationships identified above.
+```{r}
+lm(Greek_Life~Tuition_and_Fees, data=colleges_and_greek)
+
+lm(Diversity_Index~Acceptance_Rate, data=colleges_and_diversity)
+
+lm(Diversity_Index~Tuition_and_Fees, data=colleges_and_diversity)
+
+lm(Diversity_Index~Greek_Life, data=diversity_and_greek)
+```
+According to the coefficients from the four linear models, there is not a significant correlation in the first and third pairs, but there is a stronger relationship for the other two. The second model has a negative coefficient, while the last one has a positive one.
+
+# Conclusion
+From the analysis above, as college accecptance rate increases, the diversity index of the school dicreases. This means that more selective schools are more diverse. Also, as the diversity index increases, the size of greek life on campus increases.
+
+# Further Investigation
+Although more selective schools are more diverse, it would be relevant to look into the breakdown of the diversity, to see if all minorities are represented proportionately to the US population. Accounting for this might yield different results to the diversity index. In addition, while there is more greek life in more diverse campuses, it would be interesting to look into diversity within greek life, to see if greek life actually contributes to diversity or not.
+
+For more information on data tidying in R: https://cran.r-project.org/web/packages/tidyr/vignettes/tidy-data.html
+
+For more information on machine learning in R:
+https://www.datacamp.com/community/tutorials/machine-learning-in-r
+
+For insight into greek life as related to diversity on college campuses:
+http://www.insightintodiversity.com/greek-life-on-campus-an-asset-and-a-challenge/
+
+For information on affirmative action in the US:
+https://www.cnn.com/2013/11/12/us/affirmative-action-fast-facts/index.html
+
